@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <linux/types.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -6,6 +7,7 @@
 #include <cutils/properties.h>
 
 typedef uint8_t  u8;
+
 #include "steelhead_avr.h"
 
 struct avr_led_rgb_vals prepare_leds(unsigned int rgb) {
@@ -19,159 +21,215 @@ struct avr_led_rgb_vals prepare_leds(unsigned int rgb) {
     return reg;
 }
 
-int main(int argc, char *argv[]) {
+int main( int argc, char *argv[] ) {
 
-    int fd = open("/dev/leds",O_RDWR);
+    int fd = open( "/dev/leds", O_RDWR );
+
+    // On the heap
+    unsigned int * colors = (unsigned int *) NULL;
+    struct avr_led_set_range_vals *reg =
+        (struct avr_led_set_range_vals *) NULL;
+
+    // On the stack
+    u8 start = 0;
+    u8 count = 0;
     int res = 0;
+    char ** vptr = NULL;;
+    struct avr_led_rgb_vals color;
+
+    if ( fd < 0 )
+    {
+        perror( "open" );
+        res = 1;
+        goto __bail;
+    }
+
     unsigned int maxled = 0;
     char property[PROPERTY_VALUE_MAX];
     unsigned int rgb = 14428;   // 14428 is our default color
-    unsigned int colorstrip = maxled;
-    unsigned int ledcount = 0;
-    unsigned int padding = 0;
-    unsigned int ledpos = 0;
-    unsigned int mutecolor = 0;
-    struct avr_led_rgb_vals color;
-    struct avr_led_set_range_vals *reg;
 
-    ioctl(fd,AVR_LED_GET_MODE,&maxled);
-    if (maxled != 0x1) {
+    ioctl( fd, AVR_LED_GET_MODE, &maxled );
+    if ( maxled != 0x1 ) {
         maxled = 0x1; //AVR_LED_MODE_HOST_AUTO_COMMIT
-        ioctl(fd,AVR_LED_SET_MODE,&maxled);
+        ioctl( fd, AVR_LED_SET_MODE, &maxled );
     }
 
-    res = ioctl(fd,AVR_LED_GET_COUNT,&maxled);
+    res = ioctl( fd, AVR_LED_GET_COUNT, &maxled );
 
-    // make an array AFTER we know the LED count
-    unsigned int colors[maxled];
-
-    if (!res) {
-        printf("This device has %d LEDs\n",maxled);
-    } else {
-        printf("Failed to get LED count\n");
-        return 1;
+    if ( res ) {
+        fprintf( stderr, "Failed to get LED count\n" );
+        goto __closeshop;
     }
 
-    if (argc==1) {
-        char *nexttok;
-        /* use default */
-        property_get("persist.sys.ringcolor", property, "14428");
-        nexttok=strtok(property," ");
-        ledcount=0;
-        while (nexttok && ledcount<=maxled) {
-            colors[ledcount] = atoi(nexttok);
-            //printf("Set %d to %d\n",ledcount,colors[ledcount]);
-            ledcount++;
-            nexttok = strtok(NULL," ");
-        }
-    } else if (argc >= 3)
+    // Don't forget about the mute LED
+    maxled++;
+
+    // Make an array AFTER we know the LED count
+    colors = calloc( maxled, sizeof( unsigned int ) );
+
+    //if (argc==1) {
+    //    char *nexttok;
+    //    /* use default */
+    //    property_get("persist.sys.ringcolor", property, "14428");
+    //    nexttok=strtok(property," ");
+    //    ledcount=0;
+    //    while (nexttok && ledcount<=maxled) {
+    //        colors[ledcount] = atoi(nexttok);
+    //        //printf("Set %d to %d\n",ledcount,colors[ledcount]);
+    //        ledcount++;
+    //        nexttok = strtok(NULL," ");
+    //    }
+    //}
+    //else if (argc == 2)
+    //{
+    //
+    //
+    //}
+
+    // If we have < 2 arguments
+    if ( argc < 3 )
     {
-        u8 start = atoi(argv[1]);
-        u8 count = atoi(argv[2]);
+        start = 0;
+        count = maxled;
+        // Set vptr to point to either our color or NULL.
+        // If NULL, then we stick with the default.
+        vptr = argv+1;
+    }
+    // If we have 2+ arguments
+    else
+    {
+        // Safely pull in start and count; truncate the input, if needed
+        start = (u8) ( strtol( argv[1], (char**)NULL, 10 ) % sizeof(u8) );
+        count = (u8) ( strtol( argv[2], (char**)NULL, 10 ) % sizeof(u8) );
 
+        // Validate our input
+        if( errno & EINVAL )
+        {
+            fprintf( stderr, "START and/or COUNT is/are invalid\n" );
+            res = 1;
+            goto __liberate;
+        }
+
+        // Start LED sanity check
         if ( start > maxled )
         {
-            printf("Start LED [%d] out of range [0, %d]\n",
-                    start, maxled);
-            return 1;
+            fprintf( stderr, "Start LED [%d] out of range [0, %d]\n",
+                    start, maxled );
+            res = 1;
+            goto __liberate;
         }
+
+        // If there's no work to do
+        if ( count == 0 )
+        {
+            res = 0;
+            goto __liberate; // we're done here
+        }
+
+        // Make sure not to overshoot our LEDs
         if ( start + count > maxled )
         {
-            printf("Operation will overflow maxled. (%d > %d)\n",
-                    start+count, maxled);
-            return 1;
+            fprintf( stderr, "Operation will overshoot maxled. (%d > %d)\n",
+                    start+count, maxled );
+            res = 1;
+            goto __liberate;
         }
 
-        // This struct can get kinda large
-        // We allocate space for the struct itself and all of the RGB
-        // structs that it may contain.
-        // See http://gcc.gnu.org/onlinedocs/gcc/Zero-Length.html
+        // Set vptr to point to either our color or NULL.
+        // If NULL, then we stick with the default.
+        vptr = argv+3;
+    }
 
-        reg = (struct avr_led_set_range_vals *) 
-            malloc( sizeof(struct avr_led_set_range_vals) +
-                    sizeof(struct avr_led_rgb_vals) * count );
+    // The user shouldn't have to worry about the fact that
+    // the mute LED is updated differently, so let's tweak things
+    if ( start == 0 )
+    {
+        count--; // we've got one less LED to touch
 
-        reg->start = start;
-        reg->count = count;
-        reg->rgb_triples = count;
-
-        // Let's make a handy-dandy pointer to where our colors should be
-        char ** vptr = argv+3;
-        if ( start == 0 )
+        // If we've actually got a color argument
+        if ( *vptr )
         {
-            mutecolor = atoi(*vptr);
-            rgb = mutecolor;
+            rgb = strtol( *vptr, (char**)NULL, 10 ); // take in color
+            vptr++; // next color
+        }
+        // Else, just the default RGB value
+        color = prepare_leds( rgb ); // turn it into a struct
+        res = ioctl( fd, AVR_LED_SET_MUTE, &color ); // update the LED
+
+        // If setting the mute LED doesn't go so well
+        if ( res )
+        {
+            fprintf( stderr, "Failed to update the mute LED\n" );
+            goto __liberate;
+        }
+
+    }
+
+    // If there's no more work to do
+    if ( count == 0 )
+    {
+        res = 0;
+        goto __liberate; // we're done here
+    }
+
+    // This struct can get kinda large.
+    // We allocate space for the struct itself and all of the RGB
+    // structs that it may contain.
+    //
+    // space required = space for bare update struct + 
+    //  ( number of LEDs to update * space for each color struct )
+    //
+    // See http://gcc.gnu.org/onlinedocs/gcc/Zero-Length.html
+
+    reg = ( struct avr_led_set_range_vals * ) 
+        malloc( sizeof( struct avr_led_set_range_vals ) +
+                sizeof( struct avr_led_rgb_vals ) * count );
+
+    if ( reg == NULL )
+    {
+        perror("malloc");
+        res = 1;
+        goto __liberate;
+    }
+
+    // Correct for the decision to represent the mute LED as LED[0]
+    // to make sure that the AVR stays happy. Our LED[1] is the
+    // AVR's LED[0]
+    reg->start = start - 1;
+
+    reg->count = count;
+    reg->rgb_triples = count;
+
+    int i;
+    for ( i = 0; i < count; i++ )
+    {
+        // If we've still got color arguments
+        if( *vptr )
+        {
+            rgb = (u8) ( strtol( *vptr, (char**)NULL, 10 ) );
             vptr++;
         }
-        int i;
-        for ( i = 0; i < count; i++ )
-        {
-            if( *vptr != 0 )
-            {
-                rgb = atoi(*vptr);
-                vptr++;
-            }
-            // else: just repeat the last RGB value we had.
-            // If we aren't passed any, just use the default
-            reg->rgb_vals[i] = prepare_leds(rgb);
-        }
-
-        if ( start == 0 )
-        {
-            color = prepare_leds( mutecolor );
-            ioctl(fd, AVR_LED_SET_MUTE, &color);
-        }
-
-        res = ioctl(fd, AVR_LED_SET_RANGE_VALS, reg);
-        free(reg);
-
-        close(fd);
-
-        return !!res;
-
-    }
-    else {
-        colors[0]=atoi(argv[1]);
-        ledcount=1;
-        while (ledcount < (unsigned int)argc-1 && ledcount<=maxled) {
-            colors[ledcount]=atoi(argv[ledcount+1]);
-            ledcount++;
-        }
+        // Else: just repeat the last RGB value we had
+        // If we aren't passed any at all, we just use the default one
+        reg->rgb_vals[i] = prepare_leds( rgb );
     }
 
+    res = ioctl( fd, AVR_LED_SET_RANGE_VALS, reg );
 
-    reg = malloc(sizeof(reg));
+__liberate:
+    // POSIX dictates that freeing NULL pointers results in no action taken.
+    // Therefore, if we free something already freed, we just waste a syscall.
+    free( colors );
+    colors = (unsigned int *) NULL;
+    free( reg );
+    reg = (struct avr_led_set_range_vals *) NULL;
 
-    colorstrip = (unsigned int)(maxled / ledcount);
-    padding = maxled - (ledcount * colorstrip);
 
-    /* Set the mute LED to the first listed color */
-    color = prepare_leds(colors[0]);
-    ioctl(fd,AVR_LED_SET_MUTE,&color);
+__closeshop:
+    close( fd );
 
-    for (ledpos=0; ledpos < ledcount; ledpos++) {
-        unsigned int i = 0;
-        rgb = (colors[ledpos]);
-        color = prepare_leds(rgb);
-        for (i=0; i<colorstrip; i++) {
-            //printf("Setting %d to 0x%.6x\n",((ledpos*colorstrip)+i),rgb);
-            reg->rgb_vals[(ledpos*colorstrip)+i] = color;
-        }
-    }
+__bail:
+    // !! reduces a number to either 0 or 1 while maintaining truthiness
+    return !!res;
 
-    /* Fill in the remainder, if any */
-    for (ledpos=padding; ledpos > 0; ledpos--) {
-        reg->rgb_vals[maxled-ledpos] = color;
-        //printf("Setting %d to 0x%.6x\n",maxled-ledpos,rgb);
-    }
-
-    reg->start = 0;
-    reg->count = maxled;
-    reg->rgb_triples = maxled;
-    res = ioctl(fd,AVR_LED_SET_RANGE_VALS,reg);
-    free(reg);
-
-    close(fd);
-    return (res ? 1 : 0);
 }
-
