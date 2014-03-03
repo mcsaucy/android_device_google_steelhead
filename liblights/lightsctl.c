@@ -34,7 +34,8 @@ int main( int argc, char *argv[] ) {
     u8 start = 0;
     u8 count = 0;
     int res = 0;
-    char ** vptr = NULL;;
+    char ** vptr = NULL;
+    char * endptr = NULL;
     struct avr_led_rgb_vals color;
 
     if ( fd < 0 )
@@ -67,26 +68,7 @@ int main( int argc, char *argv[] ) {
     // Make an array AFTER we know the LED count
     colors = calloc( maxled, sizeof( unsigned int ) );
 
-    //if (argc==1) {
-    //    char *nexttok;
-    //    /* use default */
-    //    property_get("persist.sys.ringcolor", property, "14428");
-    //    nexttok=strtok(property," ");
-    //    ledcount=0;
-    //    while (nexttok && ledcount<=maxled) {
-    //        colors[ledcount] = atoi(nexttok);
-    //        //printf("Set %d to %d\n",ledcount,colors[ledcount]);
-    //        ledcount++;
-    //        nexttok = strtok(NULL," ");
-    //    }
-    //}
-    //else if (argc == 2)
-    //{
-    //
-    //
-    //}
-
-    // If we have < 2 arguments
+    // If we have < 2 arguments (remember that argv[0] is always there)
     if ( argc < 3 )
     {
         start = 0;
@@ -95,17 +77,27 @@ int main( int argc, char *argv[] ) {
         // If NULL, then we stick with the default.
         vptr = argv+1;
     }
-    // If we have 2+ arguments
     else
     {
         // Safely pull in start and count; truncate the input, if needed
-        start = (u8) ( strtol( argv[1], (char**)NULL, 10 ) % sizeof(u8) );
-        count = (u8) ( strtol( argv[2], (char**)NULL, 10 ) % sizeof(u8) );
+        errno = 0;
+        start = (u8) strtol( argv[1], &endptr, 10 );
 
-        // Validate our input
-        if( errno & EINVAL )
+        // Validate our start
+        if( (*endptr) || (errno == EINVAL) )
         {
-            fprintf( stderr, "START and/or COUNT is/are invalid\n" );
+            fprintf( stderr, "START is invalid\n" );
+            res = 1;
+            goto __liberate;
+        }
+
+        errno = 0;
+        count = (u8) strtol( argv[2], &endptr, 10 );
+
+        // Validate our count
+        if( (*endptr) || (errno == EINVAL) )
+        {
+            fprintf( stderr, "COUNT is invalid\n" );
             res = 1;
             goto __liberate;
         }
@@ -138,23 +130,27 @@ int main( int argc, char *argv[] ) {
         // Set vptr to point to either our color or NULL.
         // If NULL, then we stick with the default.
         vptr = argv+3;
+        puts("Moving to general actions.");
     }
 
     // The user shouldn't have to worry about the fact that
     // the mute LED is updated differently, so let's tweak things
     if ( start == 0 )
     {
-        count--; // we've got one less LED to touch
 
         // If we've actually got a color argument
         if ( *vptr )
         {
-            rgb = strtol( *vptr, (char**)NULL, 10 ); // take in color
+            // strtol treats base 0 as base 8, 10, or 16
+            rgb = strtol( *vptr, (char**)NULL, 0 ); // take in color
             vptr++; // next color
         }
         // Else, just the default RGB value
         color = prepare_leds( rgb ); // turn it into a struct
-        res = ioctl( fd, AVR_LED_SET_MUTE, &color ); // update the LED
+        res = ioctl( fd, AVR_LED_SET_MUTE, &color ); // update the mute LED
+
+        count--; // we've got one less LED to touch
+        start++; // start on the next LED in our sequence
 
         // If setting the mute LED doesn't go so well
         if ( res )
@@ -206,7 +202,8 @@ int main( int argc, char *argv[] ) {
         // If we've still got color arguments
         if( *vptr )
         {
-            rgb = (u8) ( strtol( *vptr, (char**)NULL, 10 ) );
+            // strtol treats base 0 as base 8, 10, or 16
+            rgb = strtol( *vptr, (char**)NULL, 0 );
             vptr++;
         }
         // Else: just repeat the last RGB value we had
