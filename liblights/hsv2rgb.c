@@ -11,7 +11,7 @@ void HSVtoRGB( double *r, double *g, double *b, double h, double s, double v )
         *r = *g = *b = v;
         return;
     }
-    h *= 6; 
+    h *= 6;
     i = (int) h;
     f = h - i;
     p = v * ( 1 - s );
@@ -97,4 +97,7 @@ int main ( int argc, char ** argv )
 
     return (int) r << 16 + (int) g << 8 + (int) b;
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> Forward-ported changes for lights from cm-10.1
