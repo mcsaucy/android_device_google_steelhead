@@ -36,6 +36,7 @@ TARGET_SPECIFIC_HEADER_PATH := device/google/steelhead/include
 TARGET_CPU_ABI := armeabi-v7a
 TARGET_CPU_ABI2 := armeabi
 TARGET_CPU_SMP := true
+TARGET_CPU_VARIANT := cortex-a9
 TARGET_ARCH:= arm
 TARGET_ARCH_VARIANT := armv7-a-neon
 ARCH_ARM_HAVE_TLS_REGISTER := true
@@ -58,6 +59,8 @@ BOARD_CUSTOM_RECOVERY_KEYMAPPING := ../../device/google/steelhead/recovery/recov
 BOARD_HAS_NO_SELECT_BUTTON := true
 # device-specific extensions to the updater binary
 TARGET_RELEASETOOLS_EXTENSIONS := device/google/steelhead
+TARGET_RECOVERY_FSTAB = device/google/steelhead/fstab.steelhead
+RECOVERY_FSTAB_VERSION = 2
 
 BOARD_EGL_CFG := device/google/steelhead/egl.cfg
 
@@ -93,3 +96,13 @@ TARGET_HAS_WAITFORVSYNC := true
 BOARD_USE_SYSFS_VSYNC_NOTIFICATION := true
 BOARD_BLUETOOTH_BDROID_BUILDCFG_INCLUDE_DIR := device/google/steelhead/bluetooth
 BOARD_BLUEDROID_VENDOR_CONF := device/google/steelhead/bluetooth/vnd.cfg
+
+BOARD_SEPOLICY_DIRS := \
+    device/google/steelhead/selinux
+
+BOARD_SEPOLICY_UNION := \
+    file_contexts \
+    pvrsrvinit.te \
+    device.te \
+    domain.te
+
