@@ -97,7 +97,3 @@ int main ( int argc, char ** argv )
 
     return (int) r << 16 + (int) g << 8 + (int) b;
 }
-<<<<<<< HEAD
-
-=======
->>>>>>> Forward-ported changes for lights from cm-10.1
