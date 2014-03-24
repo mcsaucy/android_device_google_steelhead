@@ -95,9 +95,5 @@ int main ( int argc, char ** argv )
 
     printf("0x%.2x%.2x%.2x", (int) r, (int) g, (int) b);
 
-    return (int) r << 16 + (int) g << 8 + (int) b;
+    return ( (int) r << 16 ) + ( (int) g << 8 ) + (int) b;
 }
-<<<<<<< HEAD
-
-=======
->>>>>>> Forward-ported changes for lights from cm-10.1
