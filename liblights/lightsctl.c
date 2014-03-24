@@ -21,6 +21,26 @@ struct avr_led_rgb_vals prepare_leds(unsigned int rgb) {
     return reg;
 }
 
+void usage()
+{
+    puts("USAGE: avrlights [start] [acount] [color1] [color2] ...\n"
+        "avrlights allows for the updating of ring LEDs on the Nexus Q.\n"
+        "start -- start LED (0 is the mute LED, 1 is the 'top' LED\n"
+        "count -- the number of LEDs to update\n"
+        "color -- a RGB color in base 8, 10, or 16\n\n"                                                                                                                                                                           
+        "EXAMPLES:\n\n"
+        "Set all LEDs to a bright teal\n"
+        "  avrlights 65535\n"
+        "Make a small rainbow\n"
+        "  avrlights 1 5 0xff 0x8888 0xff00 0x888800 0xff0000\n"
+        "Alternate the black and blue, ending with a long blue steak\n"
+        "  avrlights 4 16 0x88 0x880000 0x88 0x880000 0x88\n"
+        "Turn off all LEDs\n"
+        "  avrlights 0\n"
+        "Reset to default colors and print usage\n"
+        "  avrlights");
+}
+
 int main( int argc, char *argv[] ) {
 
     int fd = open( "/dev/leds", O_RDWR );
@@ -71,6 +91,9 @@ int main( int argc, char *argv[] ) {
     // If we have < 2 arguments (remember that argv[0] is always there)
     if ( argc < 3 )
     {
+        if ( argc == 1 )
+            usage();
+
         start = 0;
         count = maxled;
         // Set vptr to point to either our color or NULL.
@@ -87,6 +110,7 @@ int main( int argc, char *argv[] ) {
         if( (*endptr) || (errno == EINVAL) )
         {
             fprintf( stderr, "START is invalid\n" );
+            usage();
             res = 1;
             goto __liberate;
         }
@@ -98,6 +122,7 @@ int main( int argc, char *argv[] ) {
         if( (*endptr) || (errno == EINVAL) )
         {
             fprintf( stderr, "COUNT is invalid\n" );
+            usage();
             res = 1;
             goto __liberate;
         }
@@ -130,7 +155,6 @@ int main( int argc, char *argv[] ) {
         // Set vptr to point to either our color or NULL.
         // If NULL, then we stick with the default.
         vptr = argv+3;
-        puts("Moving to general actions.");
     }
 
     // The user shouldn't have to worry about the fact that
