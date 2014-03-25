@@ -87,6 +87,12 @@ int main( int argc, char *argv[] ) {
 
     // Make an array AFTER we know the LED count
     colors = calloc( maxled, sizeof( unsigned int ) );
+    if ( colors == NULL )
+    {
+        perror("calloc");
+        res = 1;
+        goto __liberate;
+    }
 
     // If we have < 2 arguments (remember that argv[0] is always there)
     if ( argc < 3 )
