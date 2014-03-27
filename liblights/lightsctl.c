@@ -27,7 +27,7 @@ void usage()
         "avrlights allows for the updating of ring LEDs on the Nexus Q.\n"
         "start -- start LED (0 is the mute LED, 1 is the 'top' LED\n"
         "count -- the number of LEDs to update\n"
-        "color -- a RGB color in base 8, 10, or 16\n\n"                                                                                                                                                                           
+        "color -- a RGB color in base 8, 10, or 16\n\n"
         "EXAMPLES:\n\n"
         "Set all LEDs to a bright teal\n"
         "  avrlights 65535\n"
